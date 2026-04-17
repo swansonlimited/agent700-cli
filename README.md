@@ -119,20 +119,20 @@ cp .env.example .env
 
 ## 📁 Local Development Files
 
-The following files are automatically generated during local development and are ignored by git:
+The CLI stores local state under your home directory, not in the repo:
 
-- **`.agent700_conversation.json`** - Stores conversation history and context
-- **`.agent700_session.dat`** - Contains session data and authentication tokens  
-- **`.env`** - Environment variables for authentication (auto-generated)
+- **`~/.agent700/conversations/default.json`** - Stores conversation history and context
+- **`~/.agent700/session.dat`** - Contains session data and authentication tokens  
+- **`.env`** - Environment variables for authentication (project-local if you create it)
 
 These files:
-- ✅ **Should be ignored by git** (already in `.gitignore`)
+- ✅ **Should be ignored by git**
 - ✅ **Contain sensitive data** (authentication tokens, session info)
 - ✅ **Are user-specific** (different for each developer)
 - ✅ **Are automatically generated** when using the CLI
 - ✅ **Should not be committed** to the repository
 
-**Note**: These files are created automatically when you first run the CLI and will persist your session and conversation history locally.
+**Note**: Legacy repo-local state files are still read if present, but new writes go to `~/.agent700/`.
 
 ## 📋 Configuration
 
@@ -377,26 +377,21 @@ Beautiful console output with:
 - Citation cards
 - MCP tool result formatting
 
-### JSON Output
-Structured data perfect for workflows:
-```json
-{
-  "user_message": "Your query",
-  "agent_response": "Agent's response",
-  "citations": ["source1", "source2"],
-  "mcp_results": [{"tool": "result"}],
-  "finish_reason": "stop",
-  "timestamp": "2023-10-10T19:15:00",
-  "success": true
-}
+### Plain Text Output
+Use `--quiet` when you want the assistant response only, with no status chatter. This is the right mode for shell scripts and piping.
+
+### Structured Command Output
+Some administrative commands support `--format json`, notably agent listing. Chat responses do not currently expose a JSON response mode.
+
+Example:
+```bash
+a700cli --list-agents --format json
 ```
 
-### Plain Text Output
-Simple text format:
+### File Output
+Use `--output-file` when you want to capture the raw assistant response for later processing.
 ```
-User: Your message
-Agent: Response content
-Citations: source1, source2
+a700cli "Generate release notes" --output-file release_notes.txt
 ```
 
 ## 💬 Interactive Conversation Mode
@@ -423,9 +418,6 @@ a700cli --interactive
 
 # Interactive with streaming
 a700cli --interactive --streaming
-
-# Interactive with verbose logging
-a700cli --interactive --verbose
 ```
 
 ### Interactive Mode Features
@@ -516,7 +508,7 @@ a700cli "Process this" # HTTP mode (default)
 
 ## 🛠️ MCP Tool Support
 
-The enhanced script provides superior MCP integration with comprehensive debugging:
+The enhanced script provides MCP integration during normal chat and streaming flows.
 
 ### Features
 - **Automatic MCP server detection** from agent configuration
@@ -524,8 +516,6 @@ The enhanced script provides superior MCP integration with comprehensive debuggi
 - **Enhanced result parsing** with multiple fallback strategies
 - **Visual tool result formatting** in rich output mode
 - **Error handling** for malformed tool responses
-- **Comprehensive MCP debugging** with verbose logging
-- **Test pattern execution** for systematic MCP testing
 
 ### MCP Tool Execution Flow
 1. **Agent Configuration**: Fetches MCP settings from agent
@@ -533,18 +523,14 @@ The enhanced script provides superior MCP integration with comprehensive debuggi
 3. **Execution Feedback**: Visual indicators during tool runs
 4. **Result Processing**: Structured display of tool outputs
 5. **Error Recovery**: Graceful handling of tool failures
-6. **Debug Logging**: Detailed MCP execution logs with `--verbose`
 
-### MCP Debugging
+### MCP Usage
 ```bash
-# Enable verbose MCP logging
-a700cli "Use MCP tools" --verbose
+# Use MCP-capable agents in normal chat
+a700cli "Use MCP tools"
 
-# Test MCP patterns systematically
-a700cli --test-patterns
-
-# Debug specific MCP issues
-a700cli "Search for information" --verbose --streaming
+# Or stream the response
+a700cli "Search for information" --streaming
 ```
 
 ## 🔄 Workflow Integration
@@ -562,12 +548,12 @@ Perfect for automated workflows and CI/CD pipelines using non-interactive mode:
 #!/bin/bash
 # Workflow script example
 
-response=$(a700cli "Analyze deployment" --output=json --quiet)
+response=$(a700cli "Analyze deployment" --quiet)
 exit_code=$?
 
 if [ $exit_code -eq 0 ]; then
     echo "Agent response successful"
-    echo "$response" | jq '.agent_response'
+    echo "$response"
 else
     echo "Agent request failed"
     exit 1
@@ -581,15 +567,12 @@ fi
 
 # Generate deployment report
 a700cli "Generate deployment report for $BRANCH" \
-    --output=json \
-    --timeout=300 \
-    --quiet > deployment_report.json
+    --output-file deployment_report.txt
 
 # Check exit code
 if [ $? -eq 0 ]; then
     echo "✅ Deployment report generated successfully"
-    # Process the JSON response
-    cat deployment_report.json | jq '.agent_response'
+    cat deployment_report.txt
 else
     echo "❌ Failed to generate deployment report"
     exit 1
@@ -602,18 +585,15 @@ fi
 # System monitoring example
 
 # Check system health
-health_status=$(a700cli "Check system health metrics" \
-    --output=plain \
-    --timeout=30 \
-    --quiet)
+health_status=$(a700cli "Check system health metrics" --quiet)
 
 if [ $? -eq 0 ]; then
     echo "System Status: $health_status"
 else
     # Send alert
     a700cli "Generate system alert notification" \
-        --output=json \
-        --quiet | jq '.agent_response' | mail -s "System Alert" admin@company.com
+        --output-file system_alert.txt
+    mail -s "System Alert" admin@company.com < system_alert.txt
 fi
 ```
 
@@ -624,19 +604,14 @@ fi
 
 # Process incoming data
 a700cli "Process data file: $INPUT_FILE" \
-    --streaming \
-    --output=json \
-    --timeout=600 > processed_data.json
+    --output-file processed_data.txt
 
 # Validate results
-validation_result=$(a700cli "Validate processed data" \
-    --output=plain \
-    --quiet)
+validation_result=$(a700cli "Validate processed data" --quiet)
 
 if [ $? -eq 0 ]; then
     echo "✅ Data processing completed: $validation_result"
-    # Move to next stage
-    mv processed_data.json /output/
+    mv processed_data.txt /output/
 else
     echo "❌ Data validation failed: $validation_result"
     exit 1
@@ -663,19 +638,16 @@ ENTRYPOINT ["a700cli"]
 ### Development & Testing
 ```bash
 # Test agent responses with rich output
-a700cli "Test query" --streaming --verbose
+a700cli "Test query" --streaming
 
-# Debug MCP tool execution
-a700cli "Use search tool" --output=json --verbose
-
-# Run systematic test patterns
-a700cli --test-patterns
+# Exercise an MCP-capable agent
+a700cli "Use search tool"
 ```
 
 ### Automation & CI/CD
 ```bash
 # Automated report generation
-a700cli "Generate weekly report" --output=json --timeout=600
+a700cli "Generate weekly report" --output-file weekly_report.txt
 
 # Quiet mode for scripts
 a700cli "Process data batch" --quiet
@@ -683,8 +655,8 @@ a700cli "Process data batch" --quiet
 
 ### Data Analysis Workflows
 ```bash
-# Process with MCP tools and get structured output
-a700cli "Analyze this dataset" --streaming --output=json
+# Process with MCP tools and stream the response
+a700cli "Analyze this dataset" --streaming
 ```
 
 ## 🐛 Troubleshooting
@@ -703,14 +675,14 @@ a700cli "Analyze this dataset" --streaming --output=json
 ### Debug Commands
 
 ```bash
-# Verbose logging for authentication issues
-a700cli "test" --verbose
-
 # Use HTTP mode if WebSocket fails
 a700cli "test"  # HTTP is default, no --streaming flag
 
-# Check agent MCP configuration
-a700cli "test" --verbose --streaming
+# Check streaming behavior explicitly
+a700cli "test" --streaming
+
+# See the authoritative CLI surface
+a700cli --help
 ```
 
 ### Error Messages
@@ -733,13 +705,13 @@ The CLI provides detailed error messages with:
 ## 💾 Session Management
 
 ### Persistent Sessions
-- **Automatic session storage** in `~/.agent700/session.json`
+- **Automatic session storage** in `~/.agent700/session.dat`
 - **Token refresh** with automatic retry logic
 - **Session validation** before each request
 - **Graceful session recovery** on token expiration
 
 ### Conversation History
-- **Chat history storage** in `~/.agent700/conversations/`
+- **Chat history storage** in `~/.agent700/conversations/default.json`
 - **Conversation context** maintained across sessions
 - **Automatic conversation management** with cleanup
 - **Rich conversation display** with timestamps and formatting
@@ -749,8 +721,8 @@ The CLI provides detailed error messages with:
 # Sessions are automatically managed
 a700cli "Continue our conversation"  # Uses existing session
 
-# Force new session
-rm ~/.agent700/session.json
+# Force a fresh local session
+rm ~/.agent700/session.dat ~/.agent700/conversations/default.json
 a700cli "Start fresh conversation"
 ```
 
@@ -778,7 +750,6 @@ a700cli "Start fresh conversation"
 
 ### Monitoring
 - **Real-time progress tracking**
-- **Performance metrics** in verbose mode
 - **Connection status monitoring**
 - **Resource usage optimization**
 

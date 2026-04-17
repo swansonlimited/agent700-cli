@@ -10,7 +10,7 @@ from a700cli.core.session import SessionManager
 
 def test_session_manager_stores_and_loads_cookies(tmp_path):
     """SessionManager persists cookies so refresh can use them."""
-    with patch("a700cli.core.session.Path", return_value=tmp_path / ".agent700_session.dat"):
+    with patch("a700cli.core.session.get_state_dir", return_value=tmp_path / ".agent700"):
         sm = SessionManager()
         sm.save_session({
             "access_token": "old_token",
