@@ -7,6 +7,25 @@
 
 ---
 
+## Executive Summary
+
+This RFC proposes that `agent700-cli` evolve from a mostly single-user terminal client into an **enterprise-applicable local runtime** with three explicit layers:
+
+1. an **edge runtime** on the employee machine for local execution and artifact generation
+2. an **org control plane** for identity, policy, audit, and oversight
+3. a **relay/gateway layer** for enterprise messaging channels such as Microsoft Teams and Google Chat
+
+It also makes four hard calls:
+
+- memory must be **scoped**, not global
+- runs and artifacts must be **auditable and replayable**
+- security and RBAC are **foundational**, not a late hardening pass
+- Teams and Google Chat require a **stable central relay**, not laptop-only adapters
+
+This document is an architecture gate, not an implementation spec.
+
+---
+
 ## Problem & Motivation
 
 `agent700-cli` is currently a useful terminal client for interacting with Agent700 agents, but it is still much closer to a single-user CLI than a true enterprise runtime.
@@ -26,7 +45,7 @@ This RFC defines the architectural direction for evolving `agent700-cli` into a 
 
 ## Product Positioning
 
-### What we want to borrow
+### Reference inputs, not templates
 
 From **Hermes Agent**:
 - durable memory and cross-session continuity
@@ -42,6 +61,8 @@ From **Paperclip**:
 - enterprise governance mindset
 - tenant-aware orchestration
 - auditability, durable work, and operational oversight
+
+These are reference inputs only. The goal is not to merge their product identities together.
 
 ### What should set `agent700-cli` apart
 
@@ -66,6 +87,13 @@ It should become:
 - Support provider-agnostic model access via API key and OAuth-based auth flows.
 - Make artifact generation a first-class outcome, not an afterthought.
 - Ensure all sensitive actions and memory access can be audited.
+
+### What success looks like
+
+- an employee can use the runtime from a terminal or TUI on their own machine
+- the same runtime can respond through Teams or Google Chat using enterprise-ready routing
+- the organization can govern memory visibility, tool use, schedules, and audit review
+- outputs are not just chat replies but durable files, reports, and artifacts tied to runs
 
 ---
 
@@ -103,6 +131,8 @@ It should become:
 ---
 
 ## Proposed Runtime Model
+
+This is a three-part system, not a single local binary pretending to do enterprise control-plane work by itself.
 
 ### 1. Edge Runtime
 
@@ -160,35 +190,16 @@ The edge runtime should sync structured records, not ad hoc blobs:
 
 ## Top-Level Entities
 
-### Organization
-A tenant boundary for a client business.
-
-### User
-An employee or contractor operating inside an organization.
-
-### Agent
-A configured assistant identity bound to a user, team, or org role.
-
-### Workspace
-A local or remote work context containing files, tools, policies, and memory bindings.
-
-### Run
-A durable unit of work with inputs, tool actions, outputs, artifacts, and outcome.
-
-### Memory Item
-A recorded preference, note, summary, fact, or provenance-linked knowledge object.
-
-### Artifact
-A generated or referenced file output, such as a report, spreadsheet, markdown note, or exported document.
-
-### Schedule
-A durable automation definition with actor identity, target scope, policy, and execution history.
-
-### Policy
-A versioned ruleset governing tool access, memory visibility, approvals, channels, and retention.
-
-### Audit Event
-An immutable event describing a material action in the system.
+- **Organization**: tenant boundary for a client business.
+- **User**: employee or contractor operating inside an organization.
+- **Agent**: configured assistant identity bound to a user, team, or org role.
+- **Workspace**: local or remote work context containing files, tools, policies, and memory bindings.
+- **Run**: durable unit of work with inputs, tool actions, outputs, artifacts, and outcome.
+- **Memory Item**: recorded preference, note, summary, fact, or provenance-linked knowledge object.
+- **Artifact**: generated or referenced file output, such as a report, spreadsheet, markdown note, or exported document.
+- **Schedule**: durable automation definition with actor identity, target scope, policy, and execution history.
+- **Policy**: versioned ruleset governing tool access, memory visibility, approvals, channels, and retention.
+- **Audit Event**: immutable event describing a material action in the system.
 
 ---
 
@@ -319,6 +330,8 @@ The product should therefore model business messaging as:
 3. relay routes to the correct edge runtime or durable queue
 4. edge runtime performs local work and returns outputs or artifacts
 5. relay delivers the response or attachment back to the channel
+
+If the edge runtime is offline, the system should fail in a governed way, not pretend delivery guarantees that do not exist.
 
 ### Microsoft Teams strategy notes
 
@@ -519,11 +532,30 @@ Each follow-on branch spec should cover:
 
 ## Open Questions
 
+### Control plane and ownership
+
 - What portion of the control plane already exists inside Agent700 versus needing new contracts?
+- Is the relay hosted by Agent700, self-hosted by each client organization, or deployable in either model?
+
+### Identity and channel mapping
+
+- What is the canonical mapping from Teams and Google Workspace identities into org, user, and agent identities?
+- Are Teams and Google Chat adapters centrally hosted only, or can some components live locally?
+
+### Audit and data authority
+
 - Should the run ledger be fully local-first with sync, or centrally assigned and mirrored locally?
+- What is the system of record for artifact metadata, retention, and replay?
+
+### Memory governance
+
 - What memory content is allowed to sync to the org by default?
-- Are Teams and Google Chat adapters local, centrally hosted, or mixed?
-- What approval and retention requirements do target client businesses already expect?
+- What must be explicitly user-shared or policy-approved before org visibility exists?
+
+### Scheduling and operations
+
+- Which schedules are allowed to run laptop-local only, and which require central scheduling awareness?
+- What approval, retention, and export requirements do target client businesses already expect?
 
 ---
 
@@ -537,3 +569,5 @@ It is to agree on this runtime model and then start with:
 - tenancy plus control-plane sync
 
 Those three define the safe shape of everything else.
+
+This RFC should therefore be reviewed as a boundary-setting document: if the team disagrees with the edge/control-plane/relay split, it should be corrected here before implementation work starts.
