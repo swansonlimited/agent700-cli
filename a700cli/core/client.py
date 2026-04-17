@@ -194,7 +194,8 @@ class WebSocketClient:
             return AgentResponse(content="", error="Failed to connect to WebSocket endpoint")
         
         # Build payload
-        messages = [{"role": "user", "content": user_message}]
+        messages = conversation_manager.to_api_messages()
+        messages.append({"role": "user", "content": user_message})
         payload = {
             "agentId": agent_uuid,
             "Authorization": f"Bearer {self.access_token}",
@@ -215,7 +216,6 @@ class WebSocketClient:
                 "mcpServerNames": agent_config['mcpServerNames']
             })
         
-        messages = [{"role": "user", "content": user_message}]
         max_tool_rounds = 10
         round_count = 0
         

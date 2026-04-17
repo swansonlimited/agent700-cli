@@ -38,6 +38,7 @@ venv.bak/
 
 # This project's virtual environment
 /venv/
+.venv/
 
 # IDE
 .vscode/

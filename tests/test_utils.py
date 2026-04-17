@@ -79,6 +79,19 @@ class MockConversationManager:
             "timestamp": "2025-01-27T00:00:00"
         })
 
+    def clear(self):
+        self.conversation_history = []
+
+    def get_conversation_context(self, limit: int = 10) -> List[Dict[str, Any]]:
+        return self.conversation_history[-limit:]
+
+    def to_api_messages(self, limit: int = 10) -> List[Dict[str, str]]:
+        api_messages = []
+        for message in self.get_conversation_context(limit=limit):
+            role = "assistant" if message.get("role") == "agent" else message.get("role")
+            api_messages.append({"role": role, "content": message.get("content", "")})
+        return api_messages
+
 
 def create_mock_auth_response(access_token: str = "test_token_123") -> MockResponse:
     """Create a mock successful authentication response."""

@@ -1229,13 +1229,11 @@ def send_message_http(access_token: str, agent_uuid: str, user_message: str,
         "User-Agent": "A700cli/1.0.0", "X-Device-Fingerprint": get_device_fingerprint()
     }
     
-    # Start with a fresh message (no conversation history for now)
-    messages = [{
+    messages = conversation_manager.to_api_messages()
+    messages.append({
         "role": "user",
         "content": user_message
-    }]
-    
-    # Messages prepared for API
+    })
     
     # Build payload for HTTP API
     payload = {
@@ -1246,7 +1244,7 @@ def send_message_http(access_token: str, agent_uuid: str, user_message: str,
     
     try:
         if not silent:
-            console.print("💬 Sending with conversation context", style="blue", end="")
+            console.print("💬 Sending request", style="blue", end="")
             
             # Start animated dots
             dots_running = True
@@ -1830,13 +1828,30 @@ def main() -> None:
                     console.print("👋 Goodbye!", style="green")
                     break
                 elif user_input.lower() == '/clear':
-                    conversation_manager.conversation_history = []
+                    conversation_manager.clear()
                     console.print("🧹 Conversation history cleared", style="yellow")
+                    continue
+                elif user_input.lower() == '/context':
+                    context = conversation_manager.get_conversation_context()
+                    if not context:
+                        console.print("ℹ️ No conversation history yet", style="dim")
+                    else:
+                        console.print("🧠 Recent context:", style="cyan")
+                        for message in context:
+                            role = message.get('role', 'unknown').upper()
+                            content = message.get('content', '')
+                            preview = content if len(content) <= 120 else f"{content[:117]}..."
+                            console.print(f"  [{role}] {preview}", style="dim")
+                    continue
+                elif user_input.lower() == '/help':
+                    console.print(
+                        "Commands: /exit, /quit, /q, /clear, /context, /help",
+                        style="dim",
+                    )
                     continue
                 
                 if not user_input: continue
                 
-                conversation_manager.add_user_message(user_input)
                 console.print("🤖 Agent: ", style="blue", end="")
                 
                 # Use WebSocket if available and requested, otherwise HTTP

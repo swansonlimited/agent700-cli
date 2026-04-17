@@ -9,7 +9,5 @@ __version__ = "1.4.0"
 __author__ = "Eric Marshall"
 __email__ = "hello@agent700.ai"
 
-from .__main__ import main
-
-__all__ = ["main"]
+__all__ = ["__version__", "__author__", "__email__"]
 
