@@ -8,6 +8,7 @@ It supports:
 - file and stdin input
 - streaming responses over WebSocket
 - local session and conversation persistence
+- local llm-wiki second-brain commands for preferences, domain knowledge, and provenance-preserving ingests (`--llm-wiki-*`)
 - agent, org, MCP, billing, QA, and context-library admin commands
 
 For the exact shipped CLI surface, run `a700cli --help`.
@@ -72,6 +73,64 @@ The CLI writes local state under your home directory:
 Project-local `.env` is still supported for credentials/config.
 
 Legacy repo-local state files are still read if present, but new writes go to `~/.agent700/`.
+
+---
+
+## LLM Wiki / Second Brain (local-first)
+
+These commands **do not** call the Agent700 API. They create a local-first second brain for agents: immutable captures under `raw/`, durable markdown pages under `wiki/`, and predictable `wiki/index.md` plus `wiki/log.md` files for navigation and chronology.
+
+This first pass is aimed at two concrete memory buckets:
+- user preferences
+- file, workspace, or domain knowledge
+
+Initialize a wiki tree in the current directory (or pass `--llm-wiki-root`):
+
+```bash
+a700cli --llm-wiki-init
+```
+
+Record a durable preference:
+
+```bash
+a700cli --llm-wiki-add-preference "Jimmy prefers direct, verifiable answers" --llm-wiki-title "Response style"
+```
+
+Record a domain summary for a repo or file domain:
+
+```bash
+a700cli --llm-wiki-add-domain agent700-cli --llm-wiki-summary "CLI stores local state under ~/.agent700 and supports local-first wiki commands" --llm-wiki-context-path /path/to/repo
+```
+
+Record a local file and attach a file-domain summary in one step:
+
+```bash
+a700cli --llm-wiki-ingest-file ./paper.pdf --llm-wiki-category research --llm-wiki-summary "Paper covers the retrieval architecture and provenance model"
+```
+
+Inspect current state:
+
+```bash
+a700cli --llm-wiki-status
+a700cli --llm-wiki-index
+```
+
+| Flag | Purpose |
+|------|---------|
+| `--llm-wiki-init` | Create `raw/`, `wiki/`, `intake/`, `AGENTS.md`, `wiki/index.md`, `wiki/log.md` |
+| `--llm-wiki-ingest-url URL` | URL ingest + `wiki/sources/` stub + index/log updates |
+| `--llm-wiki-ingest-file PATH` | File ingest, optionally with `--llm-wiki-summary` to also write a domain summary |
+| `--llm-wiki-add-preference TEXT` | Write a durable preference page under `wiki/preferences/` |
+| `--llm-wiki-add-note TEXT` | Write a durable note under `wiki/notes/` |
+| `--llm-wiki-add-domain NAME` | Write a domain summary under `wiki/domains/` (requires `--llm-wiki-summary`) |
+| `--llm-wiki-summary TEXT` | Summary body for `--llm-wiki-add-domain` or file-ingest summaries |
+| `--llm-wiki-title TEXT` | Optional title override for preference/note entries |
+| `--llm-wiki-context-path PATH` | Optional path linked to a domain summary |
+| `--llm-wiki-status` | Print second-brain counts |
+| `--llm-wiki-index` | Print `wiki/index.md` |
+| `--llm-wiki-root DIR` | Wiki root (default: current working directory) |
+| `--llm-wiki-fetch` | With ingest-url, save response bytes (errors recorded in manifest) |
+| `--llm-wiki-category NAME` | Optional manifest label for file ingests |
 
 ---
 
