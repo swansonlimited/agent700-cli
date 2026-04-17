@@ -1517,7 +1517,81 @@ def main() -> None:
     parser.add_argument(
         "--version", action="version", version=f"a700cli {__import__('a700cli').__version__}"
     )
+    parser.add_argument(
+        "--llm-wiki-init",
+        action="store_true",
+        help="Create local llm-wiki scaffold (raw/, wiki/, intake/, AGENTS.md, index.md, log.md). No API auth.",
+    )
+    parser.add_argument(
+        "--llm-wiki-ingest-url",
+        metavar="URL",
+        default=None,
+        help="Record a URL ingest under raw/sources/<id>/ with manifest.json; update wiki index and log. No API auth.",
+    )
+    parser.add_argument(
+        "--llm-wiki-ingest-file",
+        metavar="PATH",
+        default=None,
+        help="Copy a file into raw/sources/<id>/ with manifest.json; update wiki index and log. No API auth.",
+    )
+    parser.add_argument(
+        "--llm-wiki-root",
+        type=Path,
+        default=None,
+        help="Root directory for llm-wiki commands (default: current working directory).",
+    )
+    parser.add_argument(
+        "--llm-wiki-fetch",
+        action="store_true",
+        help="With --llm-wiki-ingest-url, attempt to download response bytes into raw/ (errors recorded in manifest).",
+    )
+    parser.add_argument(
+        "--llm-wiki-category",
+        metavar="NAME",
+        default=None,
+        help="Optional category label stored in manifest for --llm-wiki-ingest-file.",
+    )
     args = parser.parse_args()
+
+    wiki_cmds = (
+        int(bool(args.llm_wiki_init))
+        + int(args.llm_wiki_ingest_url is not None)
+        + int(args.llm_wiki_ingest_file is not None)
+    )
+    if wiki_cmds > 1:
+        parser.error(
+            "Use only one of --llm-wiki-init, --llm-wiki-ingest-url, --llm-wiki-ingest-file"
+        )
+    if args.llm_wiki_init or args.llm_wiki_ingest_url or args.llm_wiki_ingest_file:
+        from a700cli import llm_wiki as _llm_wiki
+
+        root = args.llm_wiki_root
+        try:
+            if args.llm_wiki_init:
+                info = _llm_wiki.init_wiki(root)
+                print(f"Initialized LLM wiki at {info['root']}")
+                if info.get("created_dirs"):
+                    print("Created directories:", ", ".join(info["created_dirs"]))
+            elif args.llm_wiki_ingest_url:
+                info = _llm_wiki.ingest_url(
+                    root, args.llm_wiki_ingest_url, fetch=args.llm_wiki_fetch
+                )
+                print(f"Recorded URL ingest source_id={info['source_id']}")
+                print(f"  manifest: {info['manifest']}")
+                print(f"  wiki:     {info['wiki_page']}")
+            else:
+                info = _llm_wiki.ingest_file(
+                    root,
+                    Path(args.llm_wiki_ingest_file),
+                    category=args.llm_wiki_category,
+                )
+                print(f"Recorded file ingest source_id={info['source_id']}")
+                print(f"  manifest: {info['manifest']}")
+                print(f"  wiki:     {info['wiki_page']}")
+        except _llm_wiki.LlmWikiError as e:
+            print(f"llm-wiki error: {e}", file=sys.stderr)
+            sys.exit(1)
+        sys.exit(0)
 
     if args.help_auth:
         print("Uses env vars: API_BASE_URL, EMAIL, PASSWORD, AGENT_UUID")

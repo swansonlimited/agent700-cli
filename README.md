@@ -8,6 +8,7 @@ It supports:
 - file and stdin input
 - streaming responses over WebSocket
 - local session and conversation persistence
+- local llm-wiki scaffold and provenance-preserving ingests (`--llm-wiki-*`)
 - agent, org, MCP, billing, QA, and context-library admin commands
 
 For the exact shipped CLI surface, run `a700cli --help`.
@@ -72,6 +73,39 @@ The CLI writes local state under your home directory:
 Project-local `.env` is still supported for credentials/config.
 
 Legacy repo-local state files are still read if present, but new writes go to `~/.agent700/`.
+
+---
+
+## LLM Wiki (local-first)
+
+These commands **do not** call the Agent700 API. They scaffold and record ingests using the usual llm-wiki layout: immutable `raw/`, maintained `wiki/`, `wiki/index.md`, `wiki/log.md`, and provenance in per-source `manifest.json` files under `raw/sources/<id>/`.
+
+Initialize a wiki tree in the current directory (or pass `--llm-wiki-root`):
+
+```bash
+a700cli --llm-wiki-init
+```
+
+Record a URL (metadata only; add `--llm-wiki-fetch` to attempt a download into `raw/`):
+
+```bash
+a700cli --llm-wiki-ingest-url 'https://example.com/article'
+```
+
+Record a local file (copy into `raw/sources/<id>/` with SHA256 in the manifest):
+
+```bash
+a700cli --llm-wiki-ingest-file ./paper.pdf --llm-wiki-category fundamentals
+```
+
+| Flag | Purpose |
+|------|---------|
+| `--llm-wiki-init` | Create `raw/`, `wiki/`, `intake/`, `AGENTS.md`, `wiki/index.md`, `wiki/log.md` |
+| `--llm-wiki-ingest-url URL` | URL ingest + `wiki/sources/` stub + index/log updates |
+| `--llm-wiki-ingest-file PATH` | File ingest + same |
+| `--llm-wiki-root DIR` | Wiki root (default: current working directory) |
+| `--llm-wiki-fetch` | With ingest-url, save response bytes (errors recorded in manifest) |
+| `--llm-wiki-category NAME` | Optional manifest label for file ingests |
 
 ---
 
