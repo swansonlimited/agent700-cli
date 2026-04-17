@@ -1532,7 +1532,53 @@ def main() -> None:
         "--llm-wiki-ingest-file",
         metavar="PATH",
         default=None,
-        help="Copy a file into raw/sources/<id>/ with manifest.json; update wiki index and log. No API auth.",
+        help="Copy a file into raw/sources/<id>/ with manifest.json; optionally add a domain summary with --llm-wiki-summary. No API auth.",
+    )
+    parser.add_argument(
+        "--llm-wiki-add-preference",
+        metavar="TEXT",
+        default=None,
+        help="Record a durable user preference page under wiki/preferences/. No API auth.",
+    )
+    parser.add_argument(
+        "--llm-wiki-add-note",
+        metavar="TEXT",
+        default=None,
+        help="Record a durable note page under wiki/notes/. No API auth.",
+    )
+    parser.add_argument(
+        "--llm-wiki-add-domain",
+        metavar="NAME",
+        default=None,
+        help="Record a domain or workspace summary under wiki/domains/. Requires --llm-wiki-summary. No API auth.",
+    )
+    parser.add_argument(
+        "--llm-wiki-summary",
+        metavar="TEXT",
+        default=None,
+        help="Summary text for --llm-wiki-add-domain or for attaching a domain summary to --llm-wiki-ingest-file.",
+    )
+    parser.add_argument(
+        "--llm-wiki-title",
+        metavar="TEXT",
+        default=None,
+        help="Optional title override for --llm-wiki-add-preference or --llm-wiki-add-note.",
+    )
+    parser.add_argument(
+        "--llm-wiki-context-path",
+        metavar="PATH",
+        default=None,
+        help="Optional file/workspace path associated with --llm-wiki-add-domain.",
+    )
+    parser.add_argument(
+        "--llm-wiki-status",
+        action="store_true",
+        help="Show local second-brain status counts. No API auth.",
+    )
+    parser.add_argument(
+        "--llm-wiki-index",
+        action="store_true",
+        help="Print wiki/index.md for the local second brain. No API auth.",
     )
     parser.add_argument(
         "--llm-wiki-root",
@@ -1549,20 +1595,48 @@ def main() -> None:
         "--llm-wiki-category",
         metavar="NAME",
         default=None,
-        help="Optional category label stored in manifest for --llm-wiki-ingest-file.",
+        help="Optional category label stored in manifests for --llm-wiki-ingest-file.",
     )
     args = parser.parse_args()
 
     wiki_cmds = (
         int(bool(args.llm_wiki_init))
-        + int(args.llm_wiki_ingest_url is not None)
-        + int(args.llm_wiki_ingest_file is not None)
+        + int(bool(args.llm_wiki_ingest_url))
+        + int(bool(args.llm_wiki_ingest_file))
+        + int(bool(args.llm_wiki_add_preference))
+        + int(bool(args.llm_wiki_add_note))
+        + int(bool(args.llm_wiki_add_domain))
+        + int(bool(args.llm_wiki_status))
+        + int(bool(args.llm_wiki_index))
     )
     if wiki_cmds > 1:
+        parser.error("Use only one primary --llm-wiki-* action at a time")
+    if args.llm_wiki_fetch and not args.llm_wiki_ingest_url:
+        parser.error("--llm-wiki-fetch requires --llm-wiki-ingest-url")
+    if args.llm_wiki_category and not args.llm_wiki_ingest_file:
+        parser.error("--llm-wiki-category requires --llm-wiki-ingest-file")
+    if args.llm_wiki_summary and not (args.llm_wiki_add_domain or args.llm_wiki_ingest_file):
         parser.error(
-            "Use only one of --llm-wiki-init, --llm-wiki-ingest-url, --llm-wiki-ingest-file"
+            "--llm-wiki-summary requires --llm-wiki-add-domain or --llm-wiki-ingest-file"
         )
-    if args.llm_wiki_init or args.llm_wiki_ingest_url or args.llm_wiki_ingest_file:
+    if args.llm_wiki_context_path and not args.llm_wiki_add_domain:
+        parser.error("--llm-wiki-context-path requires --llm-wiki-add-domain")
+    if args.llm_wiki_title and not (args.llm_wiki_add_preference or args.llm_wiki_add_note):
+        parser.error(
+            "--llm-wiki-title requires --llm-wiki-add-preference or --llm-wiki-add-note"
+        )
+    if args.llm_wiki_add_domain and not args.llm_wiki_summary:
+        parser.error("--llm-wiki-add-domain requires --llm-wiki-summary")
+    if (
+        args.llm_wiki_init
+        or args.llm_wiki_ingest_url
+        or args.llm_wiki_ingest_file
+        or args.llm_wiki_add_preference
+        or args.llm_wiki_add_note
+        or args.llm_wiki_add_domain
+        or args.llm_wiki_status
+        or args.llm_wiki_index
+    ):
         from a700cli import llm_wiki as _llm_wiki
 
         root = args.llm_wiki_root
@@ -1579,15 +1653,57 @@ def main() -> None:
                 print(f"Recorded URL ingest source_id={info['source_id']}")
                 print(f"  manifest: {info['manifest']}")
                 print(f"  wiki:     {info['wiki_page']}")
-            else:
-                info = _llm_wiki.ingest_file(
-                    root,
-                    Path(args.llm_wiki_ingest_file),
-                    category=args.llm_wiki_category,
+            elif args.llm_wiki_ingest_file:
+                if args.llm_wiki_summary:
+                    info = _llm_wiki.ingest_file_with_summary(
+                        root,
+                        Path(args.llm_wiki_ingest_file),
+                        summary=args.llm_wiki_summary,
+                        category=args.llm_wiki_category,
+                    )
+                    print(f"Recorded file ingest source_id={info['source_id']}")
+                    print(f"  manifest: {info['manifest']}")
+                    print(f"  wiki:     {info['wiki_page']}")
+                    print(f"  domain:   {info['domain_wiki_page']}")
+                else:
+                    info = _llm_wiki.ingest_file(
+                        root,
+                        Path(args.llm_wiki_ingest_file),
+                        category=args.llm_wiki_category,
+                    )
+                    print(f"Recorded file ingest source_id={info['source_id']}")
+                    print(f"  manifest: {info['manifest']}")
+                    print(f"  wiki:     {info['wiki_page']}")
+            elif args.llm_wiki_add_preference:
+                info = _llm_wiki.add_preference(
+                    root, args.llm_wiki_add_preference, title=args.llm_wiki_title
                 )
-                print(f"Recorded file ingest source_id={info['source_id']}")
-                print(f"  manifest: {info['manifest']}")
-                print(f"  wiki:     {info['wiki_page']}")
+                print(f"Recorded preference entry_id={info['entry_id']}")
+                print(f"  wiki:  {info['wiki_page']}")
+            elif args.llm_wiki_add_note:
+                info = _llm_wiki.add_note(root, args.llm_wiki_add_note, title=args.llm_wiki_title)
+                print(f"Recorded note entry_id={info['entry_id']}")
+                print(f"  wiki:  {info['wiki_page']}")
+            elif args.llm_wiki_add_domain:
+                info = _llm_wiki.add_domain_summary(
+                    root,
+                    args.llm_wiki_add_domain,
+                    args.llm_wiki_summary,
+                    context_path=args.llm_wiki_context_path,
+                )
+                print(f"Recorded domain entry_id={info['entry_id']}")
+                print(f"  wiki:  {info['wiki_page']}")
+            elif args.llm_wiki_status:
+                info = _llm_wiki.wiki_status(root)
+                print(f"LLM wiki root: {info['root']}")
+                print(f"  preferences:   {info['preferences']}")
+                print(f"  notes:         {info['notes']}")
+                print(f"  domains:       {info['domains']}")
+                print(f"  source pages:  {info['source_pages']}")
+                print(f"  raw sources:   {info['raw_source_dirs']}")
+                print(f"  log lines:     {info['log_lines']}")
+            else:
+                print(_llm_wiki.wiki_index_text(root).rstrip())
         except _llm_wiki.LlmWikiError as e:
             print(f"llm-wiki error: {e}", file=sys.stderr)
             sys.exit(1)

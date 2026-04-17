@@ -75,5 +75,79 @@ def test_ingest_url_fetch_records_error_without_network(tmp_path):
     assert data["fetch"]["error"]
 
 
+def test_second_brain_entries_update_index_and_status(tmp_path):
+    llm_wiki.init_wiki(tmp_path)
+
+    pref = llm_wiki.add_preference(
+        tmp_path,
+        "Jimmy prefers direct, verifiable answers.",
+        title="Response style",
+    )
+    note = llm_wiki.add_note(
+        tmp_path,
+        "Keep the first PR local-first and avoid backend dependencies.",
+        title="Feature scope",
+    )
+    domain = llm_wiki.add_domain_summary(
+        tmp_path,
+        "agent700-cli",
+        "CLI stores local state under ~/.agent700 and now has local second-brain commands.",
+        context_path="/Users/Fred/.openclaw/workspace-work/agent700-cli",
+    )
+
+    index = llm_wiki.wiki_index_text(tmp_path)
+    assert pref["wiki_page"] in index
+    assert note["wiki_page"] in index
+    assert domain["wiki_page"] in index
+
+    status = llm_wiki.wiki_status(tmp_path)
+    assert status["preferences"] == 1
+    assert status["notes"] == 1
+    assert status["domains"] == 1
+    assert status["source_pages"] == 0
+
+
+def test_ingest_file_with_summary_creates_domain_page(tmp_path):
+    llm_wiki.init_wiki(tmp_path)
+    f = tmp_path / "design.md"
+    f.write_text("retrieval design", encoding="utf-8")
+
+    out = llm_wiki.ingest_file_with_summary(
+        tmp_path,
+        f,
+        "Design note for the retrieval and provenance path.",
+        category="design",
+    )
+
+    assert (tmp_path / out["domain_wiki_page"]).is_file()
+    domain_text = (tmp_path / out["domain_wiki_page"]).read_text(encoding="utf-8")
+    assert "Source file:" in domain_text
+    assert out["manifest"] in domain_text
+
+    status = llm_wiki.wiki_status(tmp_path)
+    assert status["domains"] == 1
+    assert status["source_pages"] == 1
+    assert status["raw_source_dirs"] == 1
+
+
+@pytest.mark.cli
+@pytest.mark.unit
+def test_cli_llm_wiki_status_exits_before_auth(tmp_path, capsys):
+    llm_wiki.init_wiki(tmp_path)
+
+    with patch("sys.argv", ["a700cli", "--llm-wiki-status", "--llm-wiki-root", str(tmp_path)]):
+        with patch("a700cli.__main__.load_environment") as mock_env:
+            from a700cli.__main__ import main
+
+            with pytest.raises(SystemExit) as exc:
+                main()
+
+    assert exc.value.code == 0
+    mock_env.assert_not_called()
+    captured = capsys.readouterr()
+    assert "LLM wiki root:" in captured.out
+    assert "preferences:" in captured.out
+
+
 def test_normalize_url_for_fetch():
     assert llm_wiki.normalize_url_for_fetch("example.com/foo") == "https://example.com/foo"

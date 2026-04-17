@@ -29,6 +29,9 @@ DIRS = (
     "wiki/concepts",
     "wiki/formulas",
     "wiki/topics",
+    "wiki/preferences",
+    "wiki/notes",
+    "wiki/domains",
     "wiki/sources",
     "wiki/syntheses",
 )
@@ -44,6 +47,9 @@ holds synthesized markdown. Preserve provenance for substantive claims.
 - `raw/sources/<source_id>/` — one directory per ingest (manifest + payload)
 - `raw/assets/` — durable binary assets
 - `intake/urls.md` — optional URL queue notes
+- `wiki/preferences/` — durable user preferences for agents
+- `wiki/notes/` — free-form notes
+- `wiki/domains/` — workspace / file-domain summary pages
 - `wiki/index.md` — catalog
 - `wiki/log.md` — append-only chronology
 
@@ -53,6 +59,12 @@ holds synthesized markdown. Preserve provenance for substantive claims.
 2. Add or update `wiki/sources/<page>.md` pointing at the raw path.
 3. Update `wiki/index.md`.
 4. Append to `wiki/log.md`.
+
+## Second-brain entries
+
+Use CLI flags to append preferences, notes, or domain summaries: each write markdown under
+`wiki/preferences/`, `wiki/notes/`, or `wiki/domains/`, update `wiki/index.md`, and append
+`wiki/log.md` with ISO timestamps and tool provenance.
 """
 
 INTAKE_URLS_MD = """# URLs queue
@@ -63,7 +75,13 @@ Add one URL per line. Optional notes after `|`.
 
 WIKI_INDEX_TEMPLATE = """# LLM Wiki index
 
-Local-first wiki scaffold. Immutable captures live under `raw/`; maintained pages live under `wiki/`.
+Local-first second brain. Immutable captures live under `raw/`; maintained pages live under `wiki/`.
+
+## Preferences
+
+## Notes
+
+## Domain knowledge
 
 ## Sources
 
@@ -179,11 +197,31 @@ def _append_log(root: Path, line: str) -> None:
         f.write(line.rstrip() + "\n")
 
 
-def _append_index_source(root: Path, bullet: str) -> None:
+def _append_index_under_section(root: Path, section: str, bullet: str) -> None:
+    """Insert a markdown bullet line under ## {section}, creating the section if missing."""
     idx = root / "wiki" / "index.md"
     text = idx.read_text(encoding="utf-8")
-    if bullet.strip() not in text:
-        idx.write_text(text.rstrip() + "\n" + bullet.strip() + "\n", encoding="utf-8")
+    header = f"## {section}"
+    line_bullet = bullet.strip()
+    if line_bullet and line_bullet in text:
+        return
+    lines = text.splitlines()
+    try:
+        start = next(i for i, ln in enumerate(lines) if ln.strip() == header)
+    except StopIteration:
+        idx.write_text(text.rstrip() + f"\n\n{header}\n\n{line_bullet}\n", encoding="utf-8")
+        return
+    end = len(lines)
+    for j in range(start + 1, len(lines)):
+        if lines[j].startswith("## ") and lines[j].strip() != header:
+            end = j
+            break
+    new_lines = lines[:end] + ([line_bullet] if line_bullet else []) + lines[end:]
+    idx.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
+
+
+def _append_index_source(root: Path, bullet: str) -> None:
+    _append_index_under_section(root, "Sources", bullet)
 
 
 def _write_source_page(
@@ -330,3 +368,225 @@ def ingest_file(root: Path, file_path: Path, category: Optional[str] = None) -> 
         f"- [{title}](wiki/sources/{pname}.md) — captured {ts} (`{sid}`)",
     )
     return {"source_id": sid, "manifest": manifest_rel, "wiki_page": str(page.relative_to(root))}
+
+
+def _ensure_wiki_subdir(root: Path, name: str) -> Path:
+    p = root / "wiki" / name
+    p.mkdir(parents=True, exist_ok=True)
+    return p
+
+
+def _brain_entry_fingerprint(seed: str, body: str, captured: datetime) -> tuple[str, str, str]:
+    ts = _iso_z(captured)
+    digest = source_id_from_digest(f"{seed}\n{body}\n{ts}".encode("utf-8"))
+    short = digest[:8]
+    slug_base = seed[:72] if seed.strip() else body[:72]
+    slug = _slug_kebab(slug_base, short)
+    return digest, short, slug
+
+
+def add_preference(
+    root: Path, body: str, title: Optional[str] = None
+) -> Dict[str, Any]:
+    root = wiki_root_resolve(root)
+    assert_wiki_initialized(root)
+    body = body.strip()
+    if not body:
+        raise LlmWikiError("Preference text is empty")
+    _ensure_wiki_subdir(root, "preferences")
+    captured = _utc_now()
+    display = (title or "").strip() or (
+        body.splitlines()[0][:72] if body.splitlines() else "preference"
+    )
+    digest, short, slug = _brain_entry_fingerprint(display, body, captured)
+    fname = f"{slug}-{short}.md"
+    page = root / "wiki" / "preferences" / fname
+    ts = _iso_z(captured)
+    page.write_text(
+        f"""# {display}
+
+**Kind:** preference
+**Recorded at:** {ts}
+**Tool:** a700cli {__version__}
+**Entry id:** `{digest}`
+
+---
+
+{body}
+""",
+        encoding="utf-8",
+    )
+    rel = page.relative_to(root).as_posix()
+    _append_log(root, f"- [{ts}] preference | {display} → `{rel}`")
+    _append_index_under_section(
+        root, "Preferences", f"- [{display}]({rel}) — {ts}"
+    )
+    return {"entry_id": digest, "wiki_page": rel, "title": display}
+
+
+def add_note(root: Path, body: str, title: Optional[str] = None) -> Dict[str, Any]:
+    root = wiki_root_resolve(root)
+    assert_wiki_initialized(root)
+    body = body.strip()
+    if not body:
+        raise LlmWikiError("Note text is empty")
+    _ensure_wiki_subdir(root, "notes")
+    captured = _utc_now()
+    display = (title or "").strip() or (
+        body.splitlines()[0][:72] if body.splitlines() else "note"
+    )
+    digest, short, slug = _brain_entry_fingerprint(display, body, captured)
+    fname = f"{slug}-{short}.md"
+    page = root / "wiki" / "notes" / fname
+    ts = _iso_z(captured)
+    page.write_text(
+        f"""# {display}
+
+**Kind:** note
+**Recorded at:** {ts}
+**Tool:** a700cli {__version__}
+**Entry id:** `{digest}`
+
+---
+
+{body}
+""",
+        encoding="utf-8",
+    )
+    rel = page.relative_to(root).as_posix()
+    _append_log(root, f"- [{ts}] note | {display} → `{rel}`")
+    _append_index_under_section(root, "Notes", f"- [{display}]({rel}) — {ts}")
+    return {"entry_id": digest, "wiki_page": rel, "title": display}
+
+
+def add_domain_summary(
+    root: Path,
+    name: str,
+    summary: str,
+    context_path: Optional[str] = None,
+) -> Dict[str, Any]:
+    root = wiki_root_resolve(root)
+    assert_wiki_initialized(root)
+    name = name.strip()
+    summary = summary.strip()
+    if not name:
+        raise LlmWikiError("Domain name is empty")
+    if not summary:
+        raise LlmWikiError("Domain summary is empty")
+    _ensure_wiki_subdir(root, "domains")
+    captured = _utc_now()
+    digest, short, slug = _brain_entry_fingerprint(name, summary, captured)
+    fname = f"{slug}-{short}.md"
+    page = root / "wiki" / "domains" / fname
+    ts = _iso_z(captured)
+    ctx = context_path.strip() if context_path else ""
+    page.write_text(
+        f"""# Domain: {name}
+
+**Kind:** domain summary
+**Recorded at:** {ts}
+**Tool:** a700cli {__version__}
+**Context path:** `{ctx or "(none)"}`
+**Entry id:** `{digest}`
+
+---
+
+{summary}
+""",
+        encoding="utf-8",
+    )
+    rel = page.relative_to(root).as_posix()
+    _append_log(root, f"- [{ts}] domain | {name} → `{rel}`")
+    _append_index_under_section(
+        root, "Domain knowledge", f"- [{name}]({rel}) — {ts}"
+    )
+    return {"entry_id": digest, "wiki_page": rel, "name": name}
+
+
+def ingest_file_with_summary(
+    root: Path, file_path: Path, summary: str, category: Optional[str] = None
+) -> Dict[str, Any]:
+    root = wiki_root_resolve(root)
+    summary = summary.strip()
+    if not summary:
+        raise LlmWikiError("Summary text is empty")
+    out = ingest_file(root, file_path, category=category)
+    _ensure_wiki_subdir(root, "domains")
+    src = file_path.expanduser().resolve()
+    captured = _utc_now()
+    digest, short, slug = _brain_entry_fingerprint(src.name, summary, captured)
+    fname = f"{slug}-{short}.md"
+    page = root / "wiki" / "domains" / fname
+    ts = _iso_z(captured)
+    title = f"Summary: {src.name}"
+    page.write_text(
+        f"""# {title}
+
+**Kind:** file domain summary
+**Recorded at:** {ts}
+**Tool:** a700cli {__version__}
+**Source file:** `{src}`
+**Ingest wiki page:** `{out['wiki_page']}`
+**Manifest:** `{out['manifest']}`
+**Entry id:** `{digest}`
+
+---
+
+{summary}
+""",
+        encoding="utf-8",
+    )
+    rel = page.relative_to(root).as_posix()
+    sid = out["source_id"]
+    sid_short = sid[:8]
+    _append_log(
+        root,
+        f"- [{ts}] file summary | {src.name} → `{rel}` (ingest `{sid}`)",
+    )
+    _append_index_under_section(
+        root,
+        "Domain knowledge",
+        f"- [{title}]({rel}) — {ts} (ingest `{sid_short}`)",
+    )
+    return {
+        **out,
+        "domain_wiki_page": rel,
+        "domain_entry_id": digest,
+    }
+
+
+def wiki_status(root: Optional[Path]) -> Dict[str, Any]:
+    root = wiki_root_resolve(root)
+    assert_wiki_initialized(root)
+
+    def count_md(sub: str) -> int:
+        d = root / "wiki" / sub
+        if not d.is_dir():
+            return 0
+        return sum(1 for p in d.glob("*.md") if p.is_file())
+
+    log_path = root / "wiki" / "log.md"
+    log_lines = 0
+    if log_path.is_file():
+        log_lines = len(log_path.read_text(encoding="utf-8").splitlines())
+
+    raw_sources = root / "raw" / "sources"
+    n_raw = 0
+    if raw_sources.is_dir():
+        n_raw = sum(1 for p in raw_sources.iterdir() if p.is_dir())
+
+    return {
+        "root": str(root),
+        "preferences": count_md("preferences"),
+        "notes": count_md("notes"),
+        "domains": count_md("domains"),
+        "source_pages": count_md("sources"),
+        "raw_source_dirs": n_raw,
+        "log_lines": log_lines,
+    }
+
+
+def wiki_index_text(root: Optional[Path]) -> str:
+    root = wiki_root_resolve(root)
+    assert_wiki_initialized(root)
+    return (root / "wiki" / "index.md").read_text(encoding="utf-8")
