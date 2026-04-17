@@ -130,8 +130,22 @@ Responsibilities:
 - admin oversight
 - run and artifact index
 - compliance exports
+- secure relay registration for connected edge runtimes
 
-### 3. Shared Contract Between Them
+### 3. Relay / Gateway Layer
+
+Enterprise chat channels like Microsoft Teams and Google Chat require stable webhook targets and app endpoints. A laptop-local CLI cannot satisfy that requirement by itself.
+
+Responsibilities:
+- receive inbound webhooks and app events from Teams and Google Chat
+- authenticate and normalize external tenant and user identities
+- route events to the correct org and connected edge runtime
+- buffer or fail safely when an edge runtime is offline
+- broker artifact uploads or attachment delivery when work products originate on the local machine
+
+This relay may be part of the control plane, but it is a distinct architectural concern and should be modeled explicitly.
+
+### 4. Shared Contract Between Them
 
 The edge runtime should sync structured records, not ad hoc blobs:
 - run envelopes
@@ -140,6 +154,7 @@ The edge runtime should sync structured records, not ad hoc blobs:
 - artifact manifests
 - policy versions
 - schedule assignments
+- relay connection status and channel routing bindings
 
 ---
 
@@ -278,7 +293,7 @@ These are the right initial business surfaces because most target organizations 
 
 ### Channel architecture rule
 
-Treat channels as **adapters into the same runtime**, not separate products.
+Treat channels as **adapters into the same runtime**, not separate products. But for Teams and Google Chat, that adapter cannot live only on the employee laptop.
 
 Each inbound channel event should normalize into:
 - actor
@@ -287,6 +302,23 @@ Each inbound channel event should normalize into:
 - channel context
 - policy context
 - session or run target
+- relay routing target
+
+### Relay requirement
+
+For v1 business channels, assume a **central relay/gateway** is mandatory.
+
+Why:
+- Teams and Google Chat need stable webhook endpoints
+- employee laptops sleep, disconnect, change networks, and should not be public web servers
+- enterprise attachment delivery often requires server-mediated upload or channel API calls
+
+The product should therefore model business messaging as:
+1. channel event hits central relay
+2. relay authenticates tenant and user context
+3. relay routes to the correct edge runtime or durable queue
+4. edge runtime performs local work and returns outputs or artifacts
+5. relay delivers the response or attachment back to the channel
 
 ### Microsoft Teams strategy notes
 
@@ -364,6 +396,8 @@ This is where OpenClaw and Paperclip are the best references:
 
 ## Security Model
 
+Security is not a late-phase hardening item. It is a foundation for tenancy, memory scope, orchestration, and channels.
+
 ### Minimum requirements
 
 - versioned policy model
@@ -373,6 +407,8 @@ This is where OpenClaw and Paperclip are the best references:
 - sandbox modes for risky execution
 - secret scoping and redaction
 - audit logging for memory access and tool execution
+- channel-to-identity mapping controls
+- relay authentication and edge-runtime registration rules
 
 ### Dangerous mistakes to avoid
 
@@ -382,71 +418,80 @@ This is where OpenClaw and Paperclip are the best references:
 - unlogged admin access to memory
 - scheduled jobs with no clear actor identity
 - channel adapters that bypass policy enforcement
+- treating local logs as sufficient for enterprise auditability
+- assuming cron on employee laptops is reliable without central awareness
 
 ---
 
 ## Recommended Branch Sequence
 
 1. `docs/enterprise-runtime-rfc`
-   - define entities, boundaries, non-goals, and phased roadmap
+   - define entities, boundaries, control-plane split, non-goals, and phased roadmap
 
-2. `feature/org-user-agent-tenancy`
+2. `feature/provider-abstraction-v1`
+   - establish the core LLM/provider contract, auth methods, capabilities, and usage accounting
+
+3. `feature/security-policy-rbac-v1`
+   - establish policy, approvals, RBAC, secret scopes, and execution boundaries before deeper runtime work
+
+4. `feature/org-user-agent-tenancy`
    - first-class org, user, agent, and local state roots
 
-3. `feature/run-audit-replay-v1`
-   - durable run ledger, audit events, artifact manifests
+5. `feature/control-plane-sync-v1`
+   - policy sync, edge-runtime registration, relay bindings, and centralized control-plane contracts
 
-4. `feature/memory-scopes-v1`
-   - scoped memory objects and visibility rules
+6. `feature/run-audit-telemetry-v1`
+   - durable run ledger, centralized audit events, artifact manifests, and replay-ready telemetry
 
-5. `feature/provider-abstraction-v1`
-   - provider/model routing, auth methods, usage accounting
+7. `feature/memory-scopes-v1`
+   - scoped memory objects and visibility rules across user and org boundaries
 
-6. `feature/orchestration-jobs-v1`
-   - durable jobs, resumable work, delegation model
+8. `feature/orchestration-jobs-v1`
+   - durable jobs, resumable work, delegation model, waiting states
 
-7. `feature/cron-scheduler-v1`
-   - scheduled execution with actor identity and audit history
+9. `feature/relay-channel-gateway-v1`
+   - central relay/gateway for Teams and Google Chat routing, attachment brokering, and offline-safe delivery
 
-8. `feature/security-policy-rbac-v1`
-   - policy engine, approvals, RBAC, sandbox controls, secret scopes
+10. `feature/cron-scheduler-v1`
+   - scheduled execution with actor identity and audit history, built on top of secure jobs and centralized awareness
 
-9. `feature/ms-teams-adapter-v1`
-   - tenant-aware enterprise channel adapter
+11. `feature/ms-teams-adapter-v1`
+   - tenant-aware Teams integration on top of the relay model
 
-10. `feature/google-chat-adapter-v1`
-   - workspace-aware enterprise channel adapter
+12. `feature/google-chat-adapter-v1`
+   - workspace-aware Google Chat integration on top of the relay model
 
-11. `feature/org-admin-observability-v1`
+13. `feature/org-admin-observability-v1`
    - admin visibility, audit search, memory access review, exports
 
 ### Why this order
 
-Tenancy, audit, and memory scope need to exist before serious enterprise channel work. Otherwise channel integrations will hard-code identity and permission assumptions that have to be ripped back out later.
+Security cannot come eighth. Business channels cannot come before a relay model exists. Centralized audit and control-plane sync need to exist before the system claims enterprise reproducibility or governed oversight.
 
 ---
 
 ## Proposed Milestones
 
-### Milestone 1: Runtime foundation
-- tenancy
-- run ledger
-- memory scopes
-
-### Milestone 2: provider and job foundation
+### Milestone 1: Foundation and trust boundaries
 - provider abstraction
-- orchestration jobs
-- cron scheduling
-
-### Milestone 3: enterprise trust layer
 - security policy and RBAC
-- secret scopes
-- approval model
+- tenancy
+- control-plane sync
+
+### Milestone 2: Audit and memory backbone
+- run/audit telemetry
+- memory scopes
+- artifact manifests and replay posture
+
+### Milestone 3: Durable work
+- orchestration jobs
+- cron scheduling with central awareness
+- TUI polish against the same runtime model
 
 ### Milestone 4: business channels
+- relay/gateway
 - Teams adapter
 - Google Chat adapter
-- TUI polish against the same runtime model
 
 ### Milestone 5: admin oversight
 - org observability
@@ -487,8 +532,8 @@ Each follow-on branch spec should cover:
 After the llm-wiki PR, the next correct move is **not** another feature branch.
 
 It is to agree on this runtime model and then start with:
-- tenancy
-- run ledger
-- memory scopes
+- provider abstraction
+- security and RBAC
+- tenancy plus control-plane sync
 
-Those three define almost everything else.
+Those three define the safe shape of everything else.
